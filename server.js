@@ -6,12 +6,13 @@
 
 const bedrock = require("bedrock-protocol");
 const { randomUUID } = require("crypto");
-const mcData = require("minecraft-data")("bedrock_1.21.0");
-const Chunk = require("prismarine-chunk")("bedrock_1.21.0");
 
 const HOST = "0.0.0.0";
 const PORT = Number(process.env.PORT) || 19132;
-const VERSION = "1.21.0";
+const VERSION = process.env.BEDROCK_VERSION || "1.21.50";
+
+const mcData = require("minecraft-data")(`bedrock_${VERSION}`);
+const Chunk = require("prismarine-chunk")(`bedrock_${VERSION}`);
 
 // Constants for a super-flat world.
 const SPAWN = { x: 0, y: 64, z: 0 };
@@ -40,7 +41,7 @@ const server = bedrock.createServer({
 
 server.on("error", (error) => {
   console.error("Bedrock server error:", error);
-  if (error?.code === "EADDRINUSE") {
+  if (error?.code === "EADDRINUSE" || error?.errno === -1) {
     console.error(`Port ${PORT} is already in use. Set PORT to a free port and retry.`);
   }
   process.exitCode = 1;
