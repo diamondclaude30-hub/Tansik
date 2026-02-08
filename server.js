@@ -9,7 +9,7 @@ const { randomUUID } = require("crypto");
 
 const HOST = "0.0.0.0";
 const PORT = Number(process.env.PORT) || 19132;
-const VERSION = process.env.BEDROCK_VERSION || "1.21.50";
+const VERSION = process.env.BEDROCK_VERSION || "1.21.132.01";
 
 const mcData = require("minecraft-data")(`bedrock_${VERSION}`);
 const Chunk = require("prismarine-chunk")(`bedrock_${VERSION}`);
