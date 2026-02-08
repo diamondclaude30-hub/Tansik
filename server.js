@@ -14,22 +14,27 @@ function resolveBedrockVersion(minecraftData, requestedVersion) {
   }
 
   const exact = versions.find(
-    (entry) => entry.version === requestedVersion || entry.minecraftVersion === requestedVersion,
+    (entry) => entry.minecraftVersion === requestedVersion || entry.version === requestedVersion,
   );
   if (exact) {
-    return exact.version ?? exact.minecraftVersion ?? requestedVersion;
+    return exact.minecraftVersion ?? exact.version ?? requestedVersion;
   }
 
   const releaseVersions = versions.filter(
     (entry) => entry.type === "release" || entry.type === "stable" || !entry.type,
   );
   const candidates = releaseVersions.length > 0 ? releaseVersions : versions;
-  const latest = candidates[candidates.length - 1];
-  const fallback = latest?.version ?? latest?.minecraftVersion ?? requestedVersion;
+  const latestWithMinecraft = [...candidates].reverse().find((entry) => entry.minecraftVersion);
+  const latest = latestWithMinecraft ?? candidates[candidates.length - 1];
+  const fallback = latest?.minecraftVersion ?? latest?.version ?? requestedVersion;
+
+  const fallbackDetails = latest?.minecraftVersion && latest?.version
+    ? `${latest.minecraftVersion} (protocol ${latest.version})`
+    : fallback;
 
   console.warn(
     `Requested Bedrock version ${requestedVersion} not supported by minecraft-data, `
-      + `falling back to ${fallback}.`,
+      + `falling back to ${fallbackDetails}.`,
   );
   return fallback;
 }
