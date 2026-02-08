@@ -5,6 +5,7 @@
 // and instead manually drives the login + world bootstrap packet flow.
 
 const bedrock = require("bedrock-protocol");
+const { randomUUID } = require("crypto");
 const mcData = require("minecraft-data")("bedrock_1.21.0");
 const Chunk = require("prismarine-chunk")("bedrock_1.21.0");
 
@@ -27,6 +28,7 @@ const plainsBiomeId = mcData.biomesByName.plains?.id ?? 1;
 const chunkCache = new Map();
 const chunkPayloadCache = new Map();
 const clients = new Set();
+const players = new Map();
 
 const server = bedrock.createServer({
   host: HOST,
@@ -39,6 +41,10 @@ const server = bedrock.createServer({
 server.on("connect", (client) => {
   const playerState = {
     position: { ...SPAWN },
+    rotation: { yaw: 0, pitch: 0, headYaw: 0 },
+    lastBroadcast: { time: 0, position: { ...SPAWN } },
+    username: "Player",
+    uuid: randomUUID(),
   };
   client.loginState = {
     sawHandshake: false,
@@ -57,6 +63,8 @@ server.on("connect", (client) => {
 
   // 1) LOGIN
   client.on("login", (packet) => {
+    playerState.username = packet.username ?? client.username ?? playerState.username;
+    playerState.uuid = packet.uuid ?? client.uuid ?? playerState.uuid;
     // Send the initial resource pack info (empty list).
     client.queue("resource_packs_info", {
       must_accept: false,
@@ -108,6 +116,15 @@ server.on("connect", (client) => {
       y: packet.position.y,
       z: packet.position.z,
     };
+    if (packet.yaw !== undefined || packet.pitch !== undefined || packet.head_yaw !== undefined) {
+      playerState.rotation = {
+        yaw: packet.yaw ?? playerState.rotation.yaw,
+        pitch: packet.pitch ?? playerState.rotation.pitch,
+        headYaw: packet.head_yaw ?? playerState.rotation.headYaw,
+      };
+    }
+
+    maybeBroadcastMove(client, playerState);
 
     const currentChunk = {
       x: Math.floor(playerState.position.x / 16),
@@ -200,6 +217,7 @@ server.on("connect", (client) => {
     console.log("Client disconnected.");
     client.chunkState.sent.clear();
     clients.delete(client);
+    removePlayer(client);
   });
 
   console.log(`Client connected. Initial position: ${JSON.stringify(playerState.position)}`);
@@ -275,6 +293,150 @@ function sendChunksAround(client, center) {
   }
 
   pruneSentChunks(client, center, radius);
+}
+
+function maybeBroadcastMove(client, playerState) {
+  const now = Date.now();
+  const last = playerState.lastBroadcast;
+  const dx = playerState.position.x - last.position.x;
+  const dy = playerState.position.y - last.position.y;
+  const dz = playerState.position.z - last.position.z;
+  const movedEnough = dx * dx + dy * dy + dz * dz > 0.01;
+  const timeElapsed = now - last.time > 100;
+
+  if (!movedEnough && !timeElapsed) {
+    return;
+  }
+
+  last.time = now;
+  last.position = { ...playerState.position };
+  broadcastMove(client, playerState);
+}
+
+function broadcastMove(client, playerState) {
+  for (const other of clients) {
+    if (other === client) {
+      continue;
+    }
+    other.queue("move_player", {
+      runtime_id: client.entityId,
+      position: playerState.position,
+      pitch: playerState.rotation.pitch,
+      yaw: playerState.rotation.yaw,
+      head_yaw: playerState.rotation.headYaw,
+      mode: 0,
+      on_ground: true,
+      riding_runtime_id: 0,
+    });
+  }
+}
+
+function addPlayer(client) {
+  const playerState = client.playerState;
+  players.set(client, {
+    uuid: playerState.uuid,
+    username: playerState.username,
+    runtimeId: client.entityId,
+  });
+
+  const addEntry = {
+    uuid: playerState.uuid,
+    entity_unique_id: client.entityId,
+    username: playerState.username,
+    xuid: "",
+    platform_chat_id: "",
+  };
+
+  client.queue("player_list", {
+    records: [addEntry],
+    type: "add",
+  });
+
+  for (const other of clients) {
+    if (other === client) {
+      continue;
+    }
+    other.queue("player_list", {
+      records: [addEntry],
+      type: "add",
+    });
+
+    const otherState = other.playerState;
+    const otherEntry = {
+      uuid: otherState.uuid,
+      entity_unique_id: other.entityId,
+      username: otherState.username,
+      xuid: "",
+      platform_chat_id: "",
+    };
+    client.queue("player_list", {
+      records: [otherEntry],
+      type: "add",
+    });
+
+    client.queue("add_player", {
+      uuid: otherState.uuid,
+      username: otherState.username,
+      entity_id: other.entityId,
+      runtime_id: other.entityId,
+      position: otherState.position,
+      motion: { x: 0, y: 0, z: 0 },
+      pitch: otherState.rotation.pitch,
+      yaw: otherState.rotation.yaw,
+      head_yaw: otherState.rotation.headYaw,
+      held_item: { network_id: 0, count: 0, metadata: 0 },
+      metadata: [],
+      flags: 0,
+      command_permissions: 0,
+      action_permissions: 0,
+      device_id: "",
+      platform_chat_id: "",
+      build_platform: 0,
+    });
+
+    other.queue("add_player", {
+      uuid: playerState.uuid,
+      username: playerState.username,
+      entity_id: client.entityId,
+      runtime_id: client.entityId,
+      position: playerState.position,
+      motion: { x: 0, y: 0, z: 0 },
+      pitch: playerState.rotation.pitch,
+      yaw: playerState.rotation.yaw,
+      head_yaw: playerState.rotation.headYaw,
+      held_item: { network_id: 0, count: 0, metadata: 0 },
+      metadata: [],
+      flags: 0,
+      command_permissions: 0,
+      action_permissions: 0,
+      device_id: "",
+      platform_chat_id: "",
+      build_platform: 0,
+    });
+  }
+}
+
+function removePlayer(client) {
+  const playerState = client.playerState;
+  if (!playerState) {
+    return;
+  }
+
+  players.delete(client);
+
+  for (const other of clients) {
+    if (other === client) {
+      continue;
+    }
+    other.queue("player_list", {
+      records: [{
+        uuid: playerState.uuid,
+        entity_unique_id: client.entityId,
+      }],
+      type: "remove",
+    });
+    other.queue("remove_entity", { entity_unique_id: client.entityId });
+  }
 }
 
 function updateChunkPublisher(client) {
@@ -502,6 +664,8 @@ function maybeFinishLogin(client) {
   client.queue("set_local_player_as_initialized", {
     runtime_entity_id: client.entityId,
   });
+
+  addPlayer(client);
 }
 
 console.log(`Bedrock server listening on ${HOST}:${PORT} (v${VERSION})`);
