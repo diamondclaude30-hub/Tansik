@@ -42,6 +42,7 @@ server.on("connect", (client) => {
   const playerState = {
     position: { ...SPAWN },
     rotation: { yaw: 0, pitch: 0, headYaw: 0 },
+    onGround: true,
     lastBroadcast: { time: 0, position: { ...SPAWN } },
     username: "Player",
     uuid: randomUUID(),
@@ -116,6 +117,9 @@ server.on("connect", (client) => {
       y: packet.position.y,
       z: packet.position.z,
     };
+    if (typeof packet.on_ground === "boolean") {
+      playerState.onGround = packet.on_ground;
+    }
     if (packet.yaw !== undefined || packet.pitch !== undefined || packet.head_yaw !== undefined) {
       playerState.rotation = {
         yaw: packet.yaw ?? playerState.rotation.yaw,
@@ -325,7 +329,7 @@ function broadcastMove(client, playerState) {
       yaw: playerState.rotation.yaw,
       head_yaw: playerState.rotation.headYaw,
       mode: 0,
-      on_ground: true,
+      on_ground: playerState.onGround,
       riding_runtime_id: 0,
     });
   }
@@ -654,6 +658,14 @@ function maybeFinishLogin(client) {
     y: Math.floor(SPAWN.y),
     z: Math.floor(SPAWN.z),
   };
+  client.queue("set_spawn_position", {
+    spawn_type: "player",
+    position: { x: SPAWN.x, y: SPAWN.y, z: SPAWN.z },
+    dimension: 0,
+  });
+  client.queue("set_time", {
+    time: 1000,
+  });
 
   // 3) CHUNK STREAMING
   // We generate and send level_chunk packets around spawn so the player
