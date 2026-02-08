@@ -7,12 +7,41 @@
 const bedrock = require("bedrock-protocol");
 const { randomUUID } = require("crypto");
 
+function resolveBedrockVersion(minecraftData, requestedVersion) {
+  const versions = minecraftData?.versions?.bedrock ?? [];
+  if (!Array.isArray(versions) || versions.length === 0) {
+    return requestedVersion;
+  }
+
+  const exact = versions.find(
+    (entry) => entry.version === requestedVersion || entry.minecraftVersion === requestedVersion,
+  );
+  if (exact) {
+    return exact.version ?? exact.minecraftVersion ?? requestedVersion;
+  }
+
+  const releaseVersions = versions.filter(
+    (entry) => entry.type === "release" || entry.type === "stable" || !entry.type,
+  );
+  const candidates = releaseVersions.length > 0 ? releaseVersions : versions;
+  const latest = candidates[candidates.length - 1];
+  const fallback = latest?.version ?? latest?.minecraftVersion ?? requestedVersion;
+
+  console.warn(
+    `Requested Bedrock version ${requestedVersion} not supported by minecraft-data, `
+      + `falling back to ${fallback}.`,
+  );
+  return fallback;
+}
+
 const HOST = "0.0.0.0";
 const PORT = Number(process.env.PORT) || 19132;
-const VERSION = process.env.BEDROCK_VERSION || "1.21.132.01";
+const REQUESTED_VERSION = process.env.BEDROCK_VERSION || "1.21.132.01";
 
-const mcData = require("minecraft-data")(`bedrock_${VERSION}`);
-const Chunk = require("prismarine-chunk")(`bedrock_${VERSION}`);
+const minecraftData = require("minecraft-data");
+const RESOLVED_VERSION = resolveBedrockVersion(minecraftData, REQUESTED_VERSION);
+const mcData = minecraftData(`bedrock_${RESOLVED_VERSION}`);
+const Chunk = require("prismarine-chunk")(`bedrock_${RESOLVED_VERSION}`);
 
 // Constants for a super-flat world.
 const SPAWN = { x: 0, y: 64, z: 0 };
@@ -34,7 +63,7 @@ const players = new Map();
 const server = bedrock.createServer({
   host: HOST,
   port: PORT,
-  version: VERSION,
+  version: RESOLVED_VERSION,
   offline: true,
   motd: "Low-Level Bedrock Node Server",
 });
@@ -95,7 +124,7 @@ server.on("connect", (client) => {
           must_accept: false,
           behavior_pack_stack: [],
           texture_pack_stack: [],
-          game_version: VERSION,
+          game_version: RESOLVED_VERSION,
           experiments: [],
           experiments_previously_toggled: false,
         });
@@ -670,7 +699,7 @@ function maybeFinishLogin(client) {
     experiments: [],
     experiments_previously_toggled: false,
     server_authoritative_movement: "client_auth",
-    game_version: VERSION,
+    game_version: RESOLVED_VERSION,
     movement_type: "client_authoritative",
     server_engine: "bedrock-protocol",
     player_property_data: {
@@ -711,4 +740,4 @@ function maybeFinishLogin(client) {
   addPlayer(client);
 }
 
-console.log(`Bedrock server listening on ${HOST}:${PORT} (v${VERSION})`);
+console.log(`Bedrock server listening on ${HOST}:${PORT} (v${RESOLVED_VERSION})`);
