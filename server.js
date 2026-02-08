@@ -16,8 +16,8 @@ function resolveBedrockVersion(minecraftData, requestedVersion) {
   const exact = versions.find(
     (entry) => entry.minecraftVersion === requestedVersion || entry.version === requestedVersion,
   );
-  if (exact) {
-    return exact.minecraftVersion ?? exact.version ?? requestedVersion;
+  if (exact?.minecraftVersion) {
+    return exact.minecraftVersion;
   }
 
   const releaseVersions = versions.filter(
@@ -25,6 +25,14 @@ function resolveBedrockVersion(minecraftData, requestedVersion) {
   );
   const candidates = releaseVersions.length > 0 ? releaseVersions : versions;
   const latestWithMinecraft = [...candidates].reverse().find((entry) => entry.minecraftVersion);
+  if (exact?.version && latestWithMinecraft?.minecraftVersion) {
+    console.warn(
+      `Requested Bedrock version ${requestedVersion} matched protocol ${exact.version} without `
+        + `a minecraftVersion; falling back to ${latestWithMinecraft.minecraftVersion}.`,
+    );
+    return latestWithMinecraft.minecraftVersion;
+  }
+
   const latest = latestWithMinecraft ?? candidates[candidates.length - 1];
   const fallback = latest?.minecraftVersion ?? latest?.version ?? requestedVersion;
 
