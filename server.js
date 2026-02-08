@@ -66,6 +66,7 @@ server.on("connect", (client) => {
   client.on("login", (packet) => {
     playerState.username = packet.username ?? client.username ?? playerState.username;
     playerState.uuid = packet.uuid ?? client.uuid ?? playerState.uuid;
+    playerState.skin = extractSkinData(packet, client) ?? playerState.skin;
     // Send the initial resource pack info (empty list).
     client.queue("resource_packs_info", {
       must_accept: false,
@@ -337,6 +338,7 @@ function broadcastMove(client, playerState) {
 
 function addPlayer(client) {
   const playerState = client.playerState;
+  const skin = buildSkinPayload(playerState);
   players.set(client, {
     uuid: playerState.uuid,
     username: playerState.username,
@@ -349,6 +351,7 @@ function addPlayer(client) {
     username: playerState.username,
     xuid: "",
     platform_chat_id: "",
+    ...(skin ? { skin } : {}),
   };
 
   client.queue("player_list", {
@@ -366,12 +369,14 @@ function addPlayer(client) {
     });
 
     const otherState = other.playerState;
+    const otherSkin = buildSkinPayload(otherState);
     const otherEntry = {
       uuid: otherState.uuid,
       entity_unique_id: other.entityId,
       username: otherState.username,
       xuid: "",
       platform_chat_id: "",
+      ...(otherSkin ? { skin: otherSkin } : {}),
     };
     client.queue("player_list", {
       records: [otherEntry],
@@ -390,6 +395,7 @@ function addPlayer(client) {
       head_yaw: otherState.rotation.headYaw,
       held_item: { network_id: 0, count: 0, metadata: 0 },
       metadata: [],
+      ...(otherSkin ? { skin: otherSkin } : {}),
       flags: 0,
       command_permissions: 0,
       action_permissions: 0,
@@ -410,6 +416,7 @@ function addPlayer(client) {
       head_yaw: playerState.rotation.headYaw,
       held_item: { network_id: 0, count: 0, metadata: 0 },
       metadata: [],
+      ...(skin ? { skin } : {}),
       flags: 0,
       command_permissions: 0,
       action_permissions: 0,
@@ -441,6 +448,21 @@ function removePlayer(client) {
     });
     other.queue("remove_entity", { entity_unique_id: client.entityId });
   }
+}
+
+function extractSkinData(packet, client) {
+  return packet?.skin_data
+    ?? packet?.skinData
+    ?? client?.skin_data
+    ?? client?.skinData
+    ?? null;
+}
+
+function buildSkinPayload(playerState) {
+  if (!playerState?.skin) {
+    return null;
+  }
+  return playerState.skin;
 }
 
 function updateChunkPublisher(client) {
