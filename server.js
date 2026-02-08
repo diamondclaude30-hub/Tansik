@@ -10,7 +10,7 @@ const mcData = require("minecraft-data")("bedrock_1.21.0");
 const Chunk = require("prismarine-chunk")("bedrock_1.21.0");
 
 const HOST = "0.0.0.0";
-const PORT = 19132;
+const PORT = Number(process.env.PORT) || 19132;
 const VERSION = "1.21.0";
 
 // Constants for a super-flat world.
@@ -36,6 +36,14 @@ const server = bedrock.createServer({
   version: VERSION,
   offline: true,
   motd: "Low-Level Bedrock Node Server",
+});
+
+server.on("error", (error) => {
+  console.error("Bedrock server error:", error);
+  if (error?.code === "EADDRINUSE") {
+    console.error(`Port ${PORT} is already in use. Set PORT to a free port and retry.`);
+  }
+  process.exitCode = 1;
 });
 
 server.on("connect", (client) => {
